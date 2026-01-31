@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(rustc:*)",
+      "Bash(cargo --version:*)",
+      "Bash(node:*)",
+      "Bash(npm:*)",
+      "Bash(npx tailwindcss init -p)",
+      "Bash(cargo check:*)",
+      "Bash(cargo build:*)"
+    ]
+  }
+}
