@@ -101,3 +101,40 @@ pub struct DatabaseSize {
     pub size_bytes: i64,
     pub size_pretty: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExplainNode {
+    pub node_type: String,
+    pub relation_name: Option<String>,
+    pub alias: Option<String>,
+    pub startup_cost: f64,
+    pub total_cost: f64,
+    pub plan_rows: i64,
+    pub plan_width: i64,
+    pub actual_startup_time: Option<f64>,
+    pub actual_total_time: Option<f64>,
+    pub actual_rows: Option<i64>,
+    pub actual_loops: Option<i64>,
+    pub filter: Option<String>,
+    pub index_name: Option<String>,
+    pub index_cond: Option<String>,
+    pub join_type: Option<String>,
+    pub hash_cond: Option<String>,
+    pub sort_key: Option<Vec<String>>,
+    pub shared_hit_blocks: Option<i64>,
+    pub shared_read_blocks: Option<i64>,
+    pub workers_planned: Option<i64>,
+    pub workers_launched: Option<i64>,
+    pub children: Vec<ExplainNode>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExplainPlan {
+    pub query: String,
+    pub planning_time: Option<f64>,
+    pub execution_time: Option<f64>,
+    pub root: ExplainNode,
+    pub total_cost: f64,
+    pub warnings: Vec<String>,
+}

@@ -79,13 +79,13 @@ impl ConfigCollector {
             .map_err(|e| format!("Failed to get version: {}", e))?;
         let version: String = version_row.get(0);
 
-        // Try to get CPU count
-        let cpu_query = "SELECT count(*) FROM pg_stat_activity WHERE state IS NOT NULL";
-        let cpu_row = client
-            .query_one(cpu_query, &[])
-            .await
-            .map_err(|e| format!("Failed to get CPU info: {}", e))?;
-        let estimated_cores: i64 = cpu_row.get(0);
+        // Get CPU cores from max_worker_processes setting (better estimate than active connections)
+        let cpu_query = "SELECT setting::int FROM pg_settings WHERE name = 'max_worker_processes'";
+        let cpu_row = client.query_opt(cpu_query, &[]).await;
+        let estimated_cores: i64 = match cpu_row {
+            Ok(Some(row)) => row.get::<_, i32>(0) as i64,
+            _ => 8, // Default fallback
+        };
 
         // Try to estimate memory from settings
         let mem_query = "SELECT setting::bigint * 8 / 1024 FROM pg_settings WHERE name = 'shared_buffers'";

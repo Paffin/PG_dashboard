@@ -1,5 +1,6 @@
 use super::connection::ConnectionManager;
 use super::metrics::*;
+use serde_json::Value;
 
 pub struct MetricsCollector;
 
@@ -77,11 +78,11 @@ impl MetricsCollector {
             .map_err(|e| format!("Failed to check pg_stat_statements: {}", e))?;
 
         if check_ext.is_empty() {
-            return Err("pg_stat_statements extension is not installed".to_string());
+            // Return empty list instead of error when extension is not installed
+            return Ok(vec![]);
         }
 
-        let query = format!(
-            r#"
+        let query = r#"
             SELECT
                 query,
                 calls,
@@ -94,13 +95,11 @@ impl MetricsCollector {
                 shared_blks_read
             FROM pg_stat_statements
             ORDER BY total_exec_time DESC
-            LIMIT {}
-        "#,
-            limit
-        );
+            LIMIT $1
+        "#;
 
         let rows = client
-            .query(&query, &[])
+            .query(query, &[&(limit as i64)])
             .await
             .map_err(|e| format!("Failed to query pg_stat_statements: {}", e))?;
 
@@ -174,8 +173,7 @@ impl MetricsCollector {
     ) -> Result<Vec<TableStats>, String> {
         let client = manager.get_client(server_id).await?;
 
-        let query = format!(
-            r#"
+        let query = r#"
             SELECT
                 schemaname,
                 relname,
@@ -192,13 +190,11 @@ impl MetricsCollector {
                 last_autovacuum::text
             FROM pg_stat_user_tables
             ORDER BY seq_tup_read DESC
-            LIMIT {}
-        "#,
-            limit
-        );
+            LIMIT $1
+        "#;
 
         let rows = client
-            .query(&query, &[])
+            .query(query, &[&(limit as i64)])
             .await
             .map_err(|e| format!("Failed to query table stats: {}", e))?;
 
@@ -231,24 +227,21 @@ impl MetricsCollector {
     ) -> Result<Vec<IndexStats>, String> {
         let client = manager.get_client(server_id).await?;
 
-        let query = format!(
-            r#"
+        let query = r#"
             SELECT
                 schemaname,
-                tablename,
-                indexname,
+                relname as tablename,
+                indexrelname as indexname,
                 idx_scan,
                 idx_tup_read,
                 idx_tup_fetch
             FROM pg_stat_user_indexes
             ORDER BY idx_scan DESC
-            LIMIT {}
-        "#,
-            limit
-        );
+            LIMIT $1
+        "#;
 
         let rows = client
-            .query(&query, &[])
+            .query(query, &[&(limit as i64)])
             .await
             .map_err(|e| format!("Failed to query index stats: {}", e))?;
 
@@ -352,11 +345,14 @@ impl MetricsCollector {
         let query = r#"
             SELECT
                 datname,
-                pg_database_size(datname),
-                pg_size_pretty(pg_database_size(datname))
-            FROM pg_database
-            WHERE datname NOT IN ('template0', 'template1')
-            ORDER BY pg_database_size(datname) DESC
+                size_bytes,
+                pg_size_pretty(size_bytes)
+            FROM (
+                SELECT datname, pg_database_size(datname) as size_bytes
+                FROM pg_database
+                WHERE datname NOT IN ('template0', 'template1')
+            ) sizes
+            ORDER BY size_bytes DESC
         "#;
 
         let rows = client
@@ -374,5 +370,188 @@ impl MetricsCollector {
             .collect();
 
         Ok(sizes)
+    }
+
+    pub async fn explain_query(
+        manager: &ConnectionManager,
+        server_id: &str,
+        query: &str,
+        analyze: bool,
+    ) -> Result<ExplainPlan, String> {
+        let client = manager.get_client(server_id).await?;
+
+        // Validate query - only allow SELECT, INSERT, UPDATE, DELETE, WITH
+        let trimmed = query.trim().to_uppercase();
+        if !trimmed.starts_with("SELECT")
+            && !trimmed.starts_with("INSERT")
+            && !trimmed.starts_with("UPDATE")
+            && !trimmed.starts_with("DELETE")
+            && !trimmed.starts_with("WITH")
+        {
+            return Err("Only SELECT, INSERT, UPDATE, DELETE, or WITH queries can be explained".to_string());
+        }
+
+        // Build EXPLAIN command
+        let explain_query = if analyze {
+            format!("EXPLAIN (ANALYZE, COSTS, VERBOSE, BUFFERS, FORMAT JSON) {}", query)
+        } else {
+            format!("EXPLAIN (COSTS, VERBOSE, FORMAT JSON) {}", query)
+        };
+
+        let row = client
+            .query_one(&explain_query, &[])
+            .await
+            .map_err(|e| format!("Failed to explain query: {}", e))?;
+
+        let json_plan: Value = row.get(0);
+
+        // Parse the JSON plan
+        let plan_array = json_plan
+            .as_array()
+            .and_then(|arr| arr.first())
+            .ok_or("Invalid EXPLAIN output format")?;
+
+        let plan_obj = plan_array.as_object().ok_or("Invalid plan object")?;
+
+        let planning_time = plan_obj.get("Planning Time").and_then(|v| v.as_f64());
+        let execution_time = plan_obj.get("Execution Time").and_then(|v| v.as_f64());
+
+        let root_plan = plan_obj.get("Plan").ok_or("Missing Plan in EXPLAIN output")?;
+        let root_node = Self::parse_explain_node(root_plan)?;
+
+        let total_cost = root_node.total_cost;
+        let mut warnings = root_node.warnings.clone();
+        Self::collect_warnings(&root_node, &mut warnings);
+
+        Ok(ExplainPlan {
+            query: query.to_string(),
+            planning_time,
+            execution_time,
+            root: root_node,
+            total_cost,
+            warnings,
+        })
+    }
+
+    fn parse_explain_node(node: &Value) -> Result<ExplainNode, String> {
+        let obj = node.as_object().ok_or("Invalid node format")?;
+
+        let node_type = obj.get("Node Type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown")
+            .to_string();
+
+        let relation_name = obj.get("Relation Name").and_then(|v| v.as_str()).map(String::from);
+        let alias = obj.get("Alias").and_then(|v| v.as_str()).map(String::from);
+
+        let startup_cost = obj.get("Startup Cost").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let total_cost = obj.get("Total Cost").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let plan_rows = obj.get("Plan Rows").and_then(|v| v.as_i64()).unwrap_or(0);
+        let plan_width = obj.get("Plan Width").and_then(|v| v.as_i64()).unwrap_or(0);
+
+        let actual_startup_time = obj.get("Actual Startup Time").and_then(|v| v.as_f64());
+        let actual_total_time = obj.get("Actual Total Time").and_then(|v| v.as_f64());
+        let actual_rows = obj.get("Actual Rows").and_then(|v| v.as_i64());
+        let actual_loops = obj.get("Actual Loops").and_then(|v| v.as_i64());
+
+        let filter = obj.get("Filter").and_then(|v| v.as_str()).map(String::from);
+        let index_name = obj.get("Index Name").and_then(|v| v.as_str()).map(String::from);
+        let index_cond = obj.get("Index Cond").and_then(|v| v.as_str()).map(String::from);
+        let join_type = obj.get("Join Type").and_then(|v| v.as_str()).map(String::from);
+        let hash_cond = obj.get("Hash Cond").and_then(|v| v.as_str()).map(String::from);
+
+        let sort_key = obj.get("Sort Key").and_then(|v| {
+            v.as_array().map(|arr| {
+                arr.iter()
+                    .filter_map(|item| item.as_str().map(String::from))
+                    .collect()
+            })
+        });
+
+        let shared_hit_blocks = obj.get("Shared Hit Blocks").and_then(|v| v.as_i64());
+        let shared_read_blocks = obj.get("Shared Read Blocks").and_then(|v| v.as_i64());
+        let workers_planned = obj.get("Workers Planned").and_then(|v| v.as_i64());
+        let workers_launched = obj.get("Workers Launched").and_then(|v| v.as_i64());
+
+        // Parse children
+        let children: Vec<ExplainNode> = if let Some(plans) = obj.get("Plans") {
+            plans.as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|child| Self::parse_explain_node(child).ok())
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        // Generate warnings
+        let mut warnings = Vec::new();
+
+        // Seq Scan warning
+        if node_type == "Seq Scan" && plan_rows > 1000 {
+            warnings.push(format!(
+                "Sequential scan on {} with {} estimated rows - consider adding an index",
+                relation_name.as_deref().unwrap_or("table"),
+                plan_rows
+            ));
+        }
+
+        // Row estimation mismatch warning
+        if let (Some(actual), estimated) = (actual_rows, plan_rows) {
+            let ratio = if estimated > 0 { actual as f64 / estimated as f64 } else { 1.0 };
+            if ratio > 10.0 || ratio < 0.1 {
+                warnings.push(format!(
+                    "Row estimation mismatch: estimated {} vs actual {} rows",
+                    estimated, actual
+                ));
+            }
+        }
+
+        // Nested Loop warning with high loops
+        if node_type == "Nested Loop" {
+            if let Some(loops) = actual_loops {
+                if loops > 1000 {
+                    warnings.push(format!(
+                        "Nested Loop executed {} times - may indicate missing index or join optimization needed",
+                        loops
+                    ));
+                }
+            }
+        }
+
+        Ok(ExplainNode {
+            node_type,
+            relation_name,
+            alias,
+            startup_cost,
+            total_cost,
+            plan_rows,
+            plan_width,
+            actual_startup_time,
+            actual_total_time,
+            actual_rows,
+            actual_loops,
+            filter,
+            index_name,
+            index_cond,
+            join_type,
+            hash_cond,
+            sort_key,
+            shared_hit_blocks,
+            shared_read_blocks,
+            workers_planned,
+            workers_launched,
+            children,
+            warnings,
+        })
+    }
+
+    fn collect_warnings(node: &ExplainNode, warnings: &mut Vec<String>) {
+        for child in &node.children {
+            warnings.extend(child.warnings.clone());
+            Self::collect_warnings(child, warnings);
+        }
     }
 }

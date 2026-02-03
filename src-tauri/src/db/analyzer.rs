@@ -202,7 +202,7 @@ impl ConfigAnalyzer {
 
         // Check for unused indexes
         let unused_index_query = r#"
-            SELECT schemaname, tablename, indexname
+            SELECT schemaname, relname, indexrelname
             FROM pg_stat_user_indexes
             WHERE idx_scan = 0 AND indexrelname NOT LIKE '%_pkey'
             LIMIT 10

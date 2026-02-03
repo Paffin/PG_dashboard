@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { X, Loader2 } from 'lucide-react';
+import { X, Loader2, Server, CheckCircle, XCircle, Database, Lock, Globe } from 'lucide-react';
 import type { ConnectionConfig } from '../types';
 import { api } from '../lib/api';
+import { useToast } from '../contexts/ToastContext';
 
 interface AddServerModalProps {
   onClose: () => void;
@@ -9,6 +10,7 @@ interface AddServerModalProps {
 }
 
 export default function AddServerModal({ onClose, onSuccess }: AddServerModalProps) {
+  const { toast } = useToast();
   const [testing, setTesting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -37,7 +39,7 @@ export default function AddServerModal({ onClose, onSuccess }: AddServerModalPro
       onSuccess();
       onClose();
     } catch (error) {
-      alert(`Failed to add server: ${error}`);
+      toast.error(`Failed to add server: ${error}`);
     } finally {
       setAdding(false);
     }
@@ -66,50 +68,68 @@ export default function AddServerModal({ onClose, onSuccess }: AddServerModalPro
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
-        <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-white">
-            Add PostgreSQL Server
-          </h3>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+      <div className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-2xl shadow-2xl w-full max-w-md animate-scale-in">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-subtle)]">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-[var(--primary-muted)] rounded-lg">
+              <Server className="w-5 h-5 text-[var(--primary)]" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-[var(--text-primary)]">
+                Add Server
+              </h3>
+              <p className="text-xs text-[var(--text-tertiary)]">
+                Connect to PostgreSQL instance
+              </p>
+            </div>
+          </div>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+            className="p-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]
+              hover:bg-[var(--bg-elevated)] rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {/* Server Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Server Name
+            <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+              Display Name
             </label>
             <input
               type="text"
               required
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-              placeholder="My PostgreSQL Server"
+              className="input"
+              placeholder="Production DB"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          {/* Host & Port */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
                 Host
               </label>
-              <input
-                type="text"
-                required
-                value={formData.host}
-                onChange={(e) => setFormData({ ...formData, host: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-              />
+              <div className="relative">
+                <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+                <input
+                  type="text"
+                  required
+                  value={formData.host}
+                  onChange={(e) => setFormData({ ...formData, host: e.target.value })}
+                  className="input input-with-icon"
+                />
+              </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
                 Port
               </label>
               <input
@@ -117,93 +137,111 @@ export default function AddServerModal({ onClose, onSuccess }: AddServerModalPro
                 required
                 value={formData.port}
                 onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+                className="input text-center"
               />
             </div>
           </div>
 
+          {/* Database */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
               Database
             </label>
-            <input
-              type="text"
-              required
-              value={formData.database}
-              onChange={(e) => setFormData({ ...formData, database: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-            />
+            <div className="relative">
+              <Database className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)]" />
+              <input
+                type="text"
+                required
+                value={formData.database}
+                onChange={(e) => setFormData({ ...formData, database: e.target.value })}
+                className="input input-with-icon"
+              />
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Username
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.username}
-              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-            />
+          {/* Credentials */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                Username
+              </label>
+              <input
+                type="text"
+                required
+                value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type="password"
+                  required
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="input pr-10"
+                />
+                <Lock className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Password
-            </label>
-            <input
-              type="password"
-              required
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-            />
-          </div>
-
-          <div className="flex items-center">
+          {/* SSL Toggle */}
+          <label className="flex items-center gap-3 p-3 bg-[var(--bg-elevated)] rounded-xl cursor-pointer group">
             <input
               type="checkbox"
-              id="use_ssl"
               checked={formData.use_ssl}
               onChange={(e) => setFormData({ ...formData, use_ssl: e.target.checked })}
-              className="w-4 h-4 text-blue-600 border-gray-300 rounded"
+              className="w-4 h-4 rounded border-[var(--border-default)] text-[var(--primary)]
+                focus:ring-[var(--primary)] focus:ring-offset-0 bg-[var(--bg-surface)]"
             />
-            <label htmlFor="use_ssl" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-              Use SSL
-            </label>
-          </div>
+            <div className="flex-1">
+              <span className="text-sm font-medium text-[var(--text-primary)]">
+                Use SSL Connection
+              </span>
+              <p className="text-xs text-[var(--text-tertiary)]">
+                Encrypt connection to database
+              </p>
+            </div>
+          </label>
 
+          {/* Test Result */}
           {testResult && (
             <div
-              className={`p-3 rounded-lg ${
+              className={`flex items-start gap-3 p-4 rounded-xl ${
                 testResult.success
-                  ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-                  : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                  ? 'bg-[var(--success-muted)] border border-[var(--success)]/20'
+                  : 'bg-[var(--error-muted)] border border-[var(--error)]/20'
               }`}
             >
-              <p
-                className={`text-sm ${
-                  testResult.success
-                    ? 'text-green-800 dark:text-green-200'
-                    : 'text-red-800 dark:text-red-200'
-                }`}
-              >
+              {testResult.success ? (
+                <CheckCircle className="w-5 h-5 text-[var(--success)] flex-shrink-0 mt-0.5" />
+              ) : (
+                <XCircle className="w-5 h-5 text-[var(--error)] flex-shrink-0 mt-0.5" />
+              )}
+              <p className={`text-sm ${
+                testResult.success ? 'text-[var(--success)]' : 'text-[var(--error)]'
+              }`}>
                 {testResult.message}
               </p>
             </div>
           )}
 
+          {/* Actions */}
           <div className="flex gap-3 pt-2">
             <button
               type="button"
               onClick={handleTest}
               disabled={testing || adding}
-              className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+              className="btn btn-secondary flex-1"
             >
               {testing ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 inline animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Testing...
                 </>
               ) : (
@@ -213,11 +251,11 @@ export default function AddServerModal({ onClose, onSuccess }: AddServerModalPro
             <button
               type="submit"
               disabled={testing || adding}
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="btn btn-primary flex-1"
             >
               {adding ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 inline animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Adding...
                 </>
               ) : (

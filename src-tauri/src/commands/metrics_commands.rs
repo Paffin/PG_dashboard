@@ -1,6 +1,6 @@
 use crate::db::{
     ConnectionManager, MetricsCollector, DatabaseStats, QueryStat,
-    ActiveQuery, TableStats, IndexStats, LockInfo, BgWriterStats, DatabaseSize,
+    ActiveQuery, TableStats, IndexStats, LockInfo, BgWriterStats, DatabaseSize, ExplainPlan,
 };
 use tauri::State;
 
@@ -69,4 +69,14 @@ pub async fn get_database_sizes(
     manager: State<'_, ConnectionManager>,
 ) -> Result<Vec<DatabaseSize>, String> {
     MetricsCollector::get_database_sizes(&manager, &server_id).await
+}
+
+#[tauri::command]
+pub async fn explain_query(
+    server_id: String,
+    query: String,
+    analyze: bool,
+    manager: State<'_, ConnectionManager>,
+) -> Result<ExplainPlan, String> {
+    MetricsCollector::explain_query(&manager, &server_id, &query, analyze).await
 }

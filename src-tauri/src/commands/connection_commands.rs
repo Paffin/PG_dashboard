@@ -39,3 +39,11 @@ pub fn list_servers(
 ) -> Result<Vec<ServerInfo>, String> {
     Ok(manager.list_servers())
 }
+
+#[tauri::command]
+pub async fn reconnect_server(
+    id: String,
+    manager: State<'_, ConnectionManager>,
+) -> Result<(), String> {
+    manager.reconnect(&id).await
+}

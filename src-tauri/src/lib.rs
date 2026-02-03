@@ -17,6 +17,7 @@ pub fn run() {
             remove_server,
             get_server_info,
             list_servers,
+            reconnect_server,
             get_database_stats,
             get_top_queries,
             get_active_queries,
@@ -29,6 +30,7 @@ pub fn run() {
             get_hardware_info,
             analyze_configuration,
             detect_performance_issues,
+            explain_query,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

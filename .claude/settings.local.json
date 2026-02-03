@@ -8,7 +8,25 @@
       "Bash(npm:*)",
       "Bash(npx tailwindcss init -p)",
       "Bash(cargo check:*)",
-      "Bash(cargo build:*)"
+      "Bash(cargo build:*)",
+      "Bash(docker run:*)",
+      "Bash(docker ps:*)",
+      "Bash(timeout 10 bash:*)",
+      "Bash(docker exec:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd /c \"netstat -ano | findstr 1420\")",
+      "Bash(cmd /c \"taskkill /F /IM node.exe\")",
+      "Bash(tasklist:*)",
+      "Bash(cmd //c \"taskkill /F /PID 54520 & taskkill /F /PID 436\")",
+      "Bash(docker stop:*)",
+      "Bash(docker rm:*)",
+      "Bash(timeout 15 bash:*)",
+      "Bash(docker logs:*)",
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:explain.datadoghq.com)",
+      "Bash(npx tauri dev:*)"
     ]
   }
 }

@@ -1,7 +1,20 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, AlertCircle, Info, Database, Settings, Zap } from 'lucide-react';
+import {
+  AlertTriangle,
+  AlertCircle,
+  Info,
+  Database,
+  Settings,
+  Zap,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  Loader2,
+} from 'lucide-react';
 import { useServer } from '../contexts/ServerContext';
 import { api } from '../lib/api';
+import { StatCard, Skeleton, EmptyState, Badge } from '../components/ui';
 
 interface Issue {
   severity: 'Critical' | 'Warning' | 'Info';
@@ -17,83 +30,106 @@ export default function IssuesPage() {
   const [configIssues, setConfigIssues] = useState<Issue[]>([]);
   const [perfIssues, setPerfIssues] = useState<Issue[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedIssues, setExpandedIssues] = useState<Set<string>>(new Set());
+
+  const fetchIssues = async (showRefreshing = false) => {
+    if (!serverId) return;
+
+    try {
+      if (showRefreshing) setRefreshing(true);
+      setError(null);
+
+      // Fetch both analyses in parallel
+      const [configAnalysis, perfAnalysis] = await Promise.all([
+        api.analyzeConfiguration(serverId),
+        api.detectPerformanceIssues(serverId),
+      ]);
+
+      const configIssuesList = configAnalysis.map((issue) => ({
+        severity: issue.severity,
+        title: `Configuration: ${issue.parameter}`,
+        description: issue.reason,
+        recommendation: `Change from ${issue.current_value} to ${issue.recommended_value}`,
+        current: issue.current_value,
+        recommended: issue.recommended_value,
+      }));
+
+      const perfIssuesList = perfAnalysis.map((issue) => ({
+        severity: issue.severity,
+        title: issue.issue_type,
+        description: issue.description,
+        recommendation: issue.recommendation,
+      }));
+
+      setConfigIssues(configIssuesList);
+      setPerfIssues(perfIssuesList);
+      setLoading(false);
+      setRefreshing(false);
+    } catch (err: any) {
+      setError(err.toString());
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     if (!serverId) {
       setLoading(false);
       return;
     }
-
-    const fetchIssues = async () => {
-      try {
-        setError(null);
-
-        // Fetch configuration issues
-        const configAnalysis = await api.analyzeConfiguration(serverId);
-        const configIssuesList = configAnalysis.map((issue: any) => ({
-          severity: issue.severity,
-          title: `Configuration: ${issue.parameter}`,
-          description: issue.reason,
-          recommendation: `Change from ${issue.current_value} to ${issue.recommended_value}`,
-          current: issue.current_value,
-          recommended: issue.recommended_value,
-        }));
-
-        // Fetch performance issues
-        const perfAnalysis = await api.detectPerformanceIssues(serverId);
-        const perfIssuesList = perfAnalysis.map((issue: any) => ({
-          severity: issue.severity,
-          title: issue.issue_type,
-          description: issue.description,
-          recommendation: issue.recommendation,
-        }));
-
-        setConfigIssues(configIssuesList);
-        setPerfIssues(perfIssuesList);
-        setLoading(false);
-      } catch (err: any) {
-        setError(err.toString());
-        setLoading(false);
-      }
-    };
-
     fetchIssues();
   }, [serverId]);
 
+  const toggleIssue = (id: string) => {
+    setExpandedIssues(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
   if (!currentServer) {
     return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <div className="text-center">
-          <Database className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-          <h3 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
-            No Server Selected
-          </h3>
-          <p className="text-gray-500 dark:text-gray-400">
-            Please select a server from the Servers page to view issues
-          </p>
-        </div>
+      <div className="h-full flex items-center justify-center">
+        <EmptyState
+          icon={Database}
+          title="No Server Selected"
+          description="Select a server from the Servers page to view issues"
+        />
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center h-full">
-        <div className="text-gray-500 dark:text-gray-400">Analyzing server...</div>
+      <div className="p-6 space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map(i => (
+            <Skeleton key={i} variant="stat-card" />
+          ))}
+        </div>
+        <Skeleton variant="card" count={3} />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-8">
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-red-800 dark:text-red-200">
-            <AlertCircle className="w-5 h-5" />
-            <span className="font-semibold">Error analyzing server</span>
+      <div className="p-6">
+        <div className="bg-[var(--bg-surface)] rounded-lg p-5 border-l-4 border-[var(--error)]">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-[var(--error)] mt-0.5" />
+            <div>
+              <h3 className="font-semibold text-[var(--text-primary)]">Error analyzing server</h3>
+              <p className="text-sm text-[var(--text-secondary)] mt-1">{error}</p>
+            </div>
           </div>
-          <p className="text-red-700 dark:text-red-300 mt-2 text-sm">{error}</p>
         </div>
       </div>
     );
@@ -115,186 +151,182 @@ export default function IssuesPage() {
     }
   };
 
-  const getSeverityColor = (severity: string) => {
+  const getSeverityStyles = (severity: string) => {
     switch (severity) {
       case 'Critical':
         return {
-          bg: 'bg-red-50 dark:bg-red-900/20',
-          border: 'border-red-200 dark:border-red-800',
-          text: 'text-red-800 dark:text-red-200',
-          badge: 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200',
+          bg: 'bg-[var(--error-muted)]',
+          border: 'border-l-4 border-[var(--error)]',
+          icon: 'text-[var(--error)]',
+          badge: 'error' as const,
         };
       case 'Warning':
         return {
-          bg: 'bg-yellow-50 dark:bg-yellow-900/20',
-          border: 'border-yellow-200 dark:border-yellow-800',
-          text: 'text-yellow-800 dark:text-yellow-200',
-          badge: 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200',
+          bg: 'bg-[var(--warning-muted)]',
+          border: 'border-l-4 border-[var(--warning)]',
+          icon: 'text-[var(--warning)]',
+          badge: 'warning' as const,
         };
       default:
         return {
-          bg: 'bg-blue-50 dark:bg-blue-900/20',
-          border: 'border-blue-200 dark:border-blue-800',
-          text: 'text-blue-800 dark:text-blue-200',
-          badge: 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200',
+          bg: 'bg-[var(--info-muted)]',
+          border: 'border-l-4 border-[var(--info)]',
+          icon: 'text-[var(--info)]',
+          badge: 'info' as const,
         };
     }
   };
 
+  const renderIssueCard = (issue: Issue, idx: number, type: 'config' | 'perf') => {
+    const id = `${type}-${idx}`;
+    const styles = getSeverityStyles(issue.severity);
+    const isExpanded = expandedIssues.has(id);
+
+    return (
+      <div
+        key={id}
+        className={`${styles.bg} ${styles.border} rounded-xl overflow-hidden transition-all duration-200`}
+      >
+        <button
+          onClick={() => toggleIssue(id)}
+          className="w-full p-4 flex items-start gap-4 text-left hover:bg-black/5 transition-colors"
+        >
+          <div className={styles.icon}>
+            {getSeverityIcon(issue.severity)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              <h4 className="font-semibold text-[var(--text-primary)]">
+                {issue.title}
+              </h4>
+              <Badge variant={styles.badge}>
+                {issue.severity}
+              </Badge>
+            </div>
+            <p className="text-sm text-[var(--text-secondary)] line-clamp-2">
+              {issue.description}
+            </p>
+          </div>
+          <div className="text-[var(--text-tertiary)]">
+            {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+          </div>
+        </button>
+
+        {isExpanded && (
+          <div className="pr-4 pb-4 pl-14 space-y-3 animate-fade-in">
+            {issue.current && issue.recommended && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-[var(--bg-surface)] rounded-lg p-3 border border-[var(--border-subtle)]">
+                  <p className="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Current</p>
+                  <code className="text-sm font-mono text-[var(--error)]">{issue.current}</code>
+                </div>
+                <div className="bg-[var(--bg-surface)] rounded-lg p-3 border border-[var(--border-subtle)]">
+                  <p className="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Recommended</p>
+                  <code className="text-sm font-mono text-[var(--success)]">{issue.recommended}</code>
+                </div>
+              </div>
+            )}
+            <div className="bg-[var(--bg-surface)] rounded-lg p-3 border border-[var(--border-subtle)]">
+              <p className="text-[11px] text-[var(--text-tertiary)] uppercase tracking-wider mb-1">Recommendation</p>
+              <p className="text-sm text-[var(--text-secondary)]">{issue.recommendation}</p>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
-    <div className="p-8">
+    <div className="p-6 space-y-6 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">
-          Issues & Recommendations
-        </h2>
-        <p className="text-gray-500 dark:text-gray-400">
-          {currentServer.name} - {currentServer.host}:{currentServer.port}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm text-[var(--text-tertiary)]">
+            {currentServer.host}:{currentServer.port}
+          </p>
+        </div>
+        <button
+          onClick={() => fetchIssues(true)}
+          disabled={refreshing}
+          className="btn btn-secondary"
+        >
+          {refreshing ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <RefreshCw className="w-4 h-4" />
+          )}
+          Refresh
+        </button>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <AlertCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
-            <div>
-              <p className="text-sm text-red-600 dark:text-red-400">Critical</p>
-              <p className="text-2xl font-bold text-red-800 dark:text-red-200">{criticalCount}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="w-8 h-8 text-yellow-600 dark:text-yellow-400" />
-            <div>
-              <p className="text-sm text-yellow-600 dark:text-yellow-400">Warning</p>
-              <p className="text-2xl font-bold text-yellow-800 dark:text-yellow-200">{warningCount}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <Info className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-            <div>
-              <p className="text-sm text-blue-600 dark:text-blue-400">Info</p>
-              <p className="text-2xl font-bold text-blue-800 dark:text-blue-200">{infoCount}</p>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard
+          title="Critical Issues"
+          value={criticalCount}
+          icon={AlertCircle}
+          variant="error"
+          subtitle={criticalCount === 0 ? 'All clear' : 'Needs attention'}
+        />
+        <StatCard
+          title="Warnings"
+          value={warningCount}
+          icon={AlertTriangle}
+          variant="warning"
+          subtitle={warningCount === 0 ? 'No warnings' : 'Review recommended'}
+        />
+        <StatCard
+          title="Suggestions"
+          value={infoCount}
+          icon={Info}
+          variant="info"
+          subtitle="Optimization tips"
+        />
       </div>
 
-      {/* No Issues */}
+      {/* All Good State */}
       {allIssues.length === 0 && (
-        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-8 text-center">
-          <div className="w-16 h-16 bg-green-100 dark:bg-green-900 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl">✓</span>
+        <div className="card p-12 text-center">
+          <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-[var(--success-muted)] flex items-center justify-center">
+            <CheckCircle2 className="w-8 h-8 text-[var(--success)]" />
           </div>
-          <h3 className="text-xl font-semibold text-green-800 dark:text-green-200 mb-2">
+          <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-2">
             All Good!
           </h3>
-          <p className="text-green-700 dark:text-green-300">
-            No issues detected. Your PostgreSQL configuration looks healthy.
+          <p className="text-sm text-[var(--text-secondary)] max-w-md mx-auto">
+            No issues detected. Your PostgreSQL configuration looks healthy and optimized.
           </p>
         </div>
       )}
 
       {/* Configuration Issues */}
       {configIssues.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
-            <Settings className="w-6 h-6" />
-            Configuration Issues
-          </h3>
-          <div className="space-y-4">
-            {configIssues.map((issue, idx) => {
-              const colors = getSeverityColor(issue.severity);
-              return (
-                <div
-                  key={idx}
-                  className={`${colors.bg} ${colors.border} border rounded-lg p-6`}
-                >
-                  <div className="flex items-start gap-4">
-                    <div className={colors.text}>
-                      {getSeverityIcon(issue.severity)}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h4 className={`font-semibold ${colors.text}`}>
-                          {issue.title}
-                        </h4>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${colors.badge}`}>
-                          {issue.severity}
-                        </span>
-                      </div>
-                      <p className={`text-sm mb-3 ${colors.text}`}>
-                        {issue.description}
-                      </p>
-                      {issue.current && issue.recommended && (
-                        <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
-                          <div>
-                            <span className="font-medium">Current:</span>{' '}
-                            <span className="font-mono">{issue.current}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium">Recommended:</span>{' '}
-                            <span className="font-mono">{issue.recommended}</span>
-                          </div>
-                        </div>
-                      )}
-                      <div className={`text-sm ${colors.text} bg-white dark:bg-gray-800 p-3 rounded`}>
-                        <span className="font-medium">💡 Recommendation:</span> {issue.recommendation}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Settings className="w-5 h-5 text-[var(--text-tertiary)]" />
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+              Configuration Issues
+            </h2>
+            <Badge variant="default">{configIssues.length}</Badge>
+          </div>
+          <div className="space-y-3">
+            {configIssues.map((issue, idx) => renderIssueCard(issue, idx, 'config'))}
           </div>
         </div>
       )}
 
       {/* Performance Issues */}
       {perfIssues.length > 0 && (
-        <div>
-          <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
-            <Zap className="w-6 h-6" />
-            Performance Issues
-          </h3>
-          <div className="space-y-4">
-            {perfIssues.map((issue, idx) => {
-              const colors = getSeverityColor(issue.severity);
-              return (
-                <div
-                  key={idx}
-                  className={`${colors.bg} ${colors.border} border rounded-lg p-6`}
-                >
-                  <div className="flex items-start gap-4">
-                    <div className={colors.text}>
-                      {getSeverityIcon(issue.severity)}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h4 className={`font-semibold ${colors.text}`}>
-                          {issue.title}
-                        </h4>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${colors.badge}`}>
-                          {issue.severity}
-                        </span>
-                      </div>
-                      <p className={`text-sm mb-3 ${colors.text}`}>
-                        {issue.description}
-                      </p>
-                      <div className={`text-sm ${colors.text} bg-white dark:bg-gray-800 p-3 rounded`}>
-                        <span className="font-medium">💡 Recommendation:</span> {issue.recommendation}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-[var(--text-tertiary)]" />
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+              Performance Issues
+            </h2>
+            <Badge variant="default">{perfIssues.length}</Badge>
+          </div>
+          <div className="space-y-3">
+            {perfIssues.map((issue, idx) => renderIssueCard(issue, idx, 'perf'))}
           </div>
         </div>
       )}
