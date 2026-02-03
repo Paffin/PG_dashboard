@@ -114,7 +114,7 @@ export default function Layout({ children }: LayoutProps) {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {navigation.map((item, index) => {
+        {navigation.map((item) => {
           const Icon = item.icon;
           const isActive = location.pathname === item.path;
           const needsServer = item.path !== '/';
