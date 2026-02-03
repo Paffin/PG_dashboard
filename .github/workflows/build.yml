@@ -1,10 +1,18 @@
-name: Build Tauri App
+name: Build & Release
 
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: false
+        default: 'dev'
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -12,22 +20,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS Apple Silicon (M1/M2)
+          # macOS Apple Silicon (M1/M2/M3)
           - platform: macos-latest
             target: aarch64-apple-darwin
             name: macOS-arm64
+            ext: dmg
           # macOS Intel
           - platform: macos-latest
             target: x86_64-apple-darwin
             name: macOS-x64
+            ext: dmg
           # Windows
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             name: Windows-x64
+            ext: msi
           # Linux
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             name: Linux-x64
+            ext: AppImage
 
     runs-on: ${{ matrix.platform }}
 
@@ -60,6 +72,43 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'PG Dashboard ${{ github.ref_name }}'
+          releaseBody: |
+            ## What's New
+
+            See the [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+
+            ## Downloads
+
+            | Platform | Architecture | File |
+            |----------|--------------|------|
+            | Windows | x64 | `PG-Dashboard_*_x64-setup.exe` or `.msi` |
+            | macOS | Apple Silicon (M1/M2/M3) | `PG-Dashboard_*_aarch64.dmg` |
+            | macOS | Intel | `PG-Dashboard_*_x64.dmg` |
+            | Linux | x64 | `.AppImage` or `.deb` |
+
+            ## Installation
+
+            ### Windows
+            Download and run the `.msi` or `.exe` installer.
+
+            ### macOS
+            1. Download the `.dmg` file for your architecture
+            2. Open the DMG and drag PG Dashboard to Applications
+            3. On first launch, right-click → Open (to bypass Gatekeeper)
+
+            ### Linux
+            ```bash
+            # AppImage
+            chmod +x PG-Dashboard_*.AppImage
+            ./PG-Dashboard_*.AppImage
+
+            # Debian/Ubuntu
+            sudo dpkg -i PG-Dashboard_*.deb
+            ```
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
           args: --target ${{ matrix.target }}
 
       - name: Upload artifacts
@@ -68,9 +117,10 @@ jobs:
           name: PG-Dashboard-${{ matrix.name }}
           path: |
             src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
             src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
             src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
             src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
           if-no-files-found: ignore
+          retention-days: 7
